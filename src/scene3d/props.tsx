@@ -3,10 +3,11 @@ import { useMemo, useRef, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import type { Vec3 } from '../office3d-layout.ts'
+import { toonGradient } from './anime.ts'
 import { arcadeScreen, merahPutih, screenTexture, signTexture } from './textures.ts'
 
-// Low-poly props built from primitives. Rounded edges and PBR materials keep them from
-// looking flat; everything is procedural, so no model files are shipped.
+// Low-poly props built from primitives. Rounded edges and cel (toon) shading keep them
+// looking like a clean anime set; everything is procedural, so no model files are shipped.
 
 const roundedCache = new Map<string, THREE.BufferGeometry>()
 function roundedGeometry(size: Vec3, radius: number) {
@@ -21,14 +22,24 @@ function roundedGeometry(size: Vec3, radius: number) {
 
 interface MaterialProps { color: string; roughness?: number; metalness?: number; emissive?: string; emissiveIntensity?: number; opacity?: number; map?: THREE.Texture }
 
-function Material({ color, roughness = 0.7, metalness = 0, emissive, emissiveIntensity = 0.5, opacity, map }: MaterialProps) {
-  return <meshStandardMaterial color={color} roughness={roughness} metalness={metalness} emissive={emissive ?? '#000000'} emissiveIntensity={emissive ? emissiveIntensity : 0} transparent={opacity !== undefined} opacity={opacity ?? 1} map={map}/>
+// Cel shading: roughness/metalness stay in the props so call sites need not change, but
+// MeshToonMaterial ignores them — the stepped gradient map gives every prop its flat
+// anime bands of light instead.
+function Material({ color, emissive, emissiveIntensity = 0.5, opacity, map }: MaterialProps) {
+  return <meshToonMaterial color={color} gradientMap={toonGradient()} emissive={emissive ?? '#000000'} emissiveIntensity={emissive ? emissiveIntensity : 0} transparent={opacity !== undefined} opacity={opacity ?? 1} map={map}/>
 }
 
 /** Rounded box. */
 export function RBox({ position, size, radius = 0.04, rotation, shadow = true, ...material }: { position: Vec3; size: Vec3; radius?: number; rotation?: Vec3; shadow?: boolean } & MaterialProps) {
   return <mesh position={position} rotation={rotation} geometry={roundedGeometry(size, radius)} castShadow={shadow} receiveShadow>
     <Material {...material}/>
+  </mesh>
+}
+
+/** Inverted-hull outline shell: a slightly larger back-faced copy of a box that reads as an anime outline around it. */
+export function OutlineBox({ position, size, radius = 0.04, scale = 1.07 }: { position: Vec3; size: Vec3; radius?: number; scale?: number }) {
+  return <mesh position={position} geometry={roundedGeometry(size, radius)} scale={scale}>
+    <meshBasicMaterial color="#20242a" side={THREE.BackSide}/>
   </mesh>
 }
 

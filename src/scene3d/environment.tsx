@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { ARCADES, BALCONY, BALCONY_DOOR, BALCONY_TABLE, BATHROOM, BEANBAGS, CARROM, COFFEE_TABLE, ENTRANCE_X, FLAG, FLOOR_HEIGHT, type Floor as FloorNumber, GAME_DOOR, GAME_ROOM, GAME_TV, HAMMOCK, LESEHAN_TABLE, LOUNGE_PARTITION_END_Z, MEETING_DOOR_X, PARTITION_X, PING_PONG, SOFA, STAIRS, STALL_ROTATION, type OfficeLayout, TV, type Vec3 } from '../office3d-layout.ts'
 import { AcOutdoorUnit, AirConditioner, ArcadeCabinet, Armchair, BathroomFittings, Beanbag, Bed, Bookshelf, CarromTable, ClothesLine, CoffeeTable, FlagPole, FloorCushion, Fridge, GalonDispenser, Gerobak, Hammock, KopiSepeda, LongTable, LowTable, Nightstand, OfficeChair, OfficeLight, PantryCounter, PingPongTable, Plant, Railing, RattanChair, RBox, SideTable, Sofa, Staircase, StreetLamp, StringLights, Television, Tree, Vendor, WallClock, Wardrobe, WaterTank, Whiteboard } from './props.tsx'
+import { toonGradient } from './anime.ts'
 import { asphalt, carpet, grass, pavingStones, tileFloor, woodFloor } from './textures.ts'
 
 // The building (floors, walls, windows, furniture) and its surroundings (yard, sidewalk,
@@ -12,10 +13,10 @@ const WALL_TOP = '#d9cdb8'
 const WALL_HEIGHT = 2.6
 const THICK = 0.25
 
-function Floor({ position, size, map, color = '#ffffff', roughness = 0.8 }: { position: Vec3; size: [number, number]; map?: ReturnType<typeof woodFloor>; color?: string; roughness?: number }) {
+function Floor({ position, size, map, color = '#ffffff' }: { position: Vec3; size: [number, number]; map?: ReturnType<typeof woodFloor>; color?: string; roughness?: number }) {
   return <mesh position={position} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
     <planeGeometry args={size}/>
-    <meshStandardMaterial map={map} color={color} roughness={roughness}/>
+    <meshToonMaterial map={map} color={color} gradientMap={toonGradient()}/>
   </mesh>
 }
 
@@ -33,7 +34,7 @@ function Wall({ from, to, height = WALL_HEIGHT }: { from: [number, number]; to: 
 function Window({ position, width = 1.8, night }: { position: Vec3; width?: number; night: boolean }) {
   return <group position={position}>
     <RBox position={[0, 0, 0]} size={[width + 0.12, 1.22, 0.12]} radius={0.02} color="#5a4636"/>
-    <mesh position={[0, 0, 0.065]}><planeGeometry args={[width, 1.1]}/><meshStandardMaterial color={night ? '#2d3f5c' : '#9fd3ea'} emissive={night ? '#1c2c4a' : '#6fb6d6'} emissiveIntensity={0.35} roughness={0.05} metalness={0.2}/></mesh>
+    <mesh position={[0, 0, 0.065]}><planeGeometry args={[width, 1.1]}/><meshToonMaterial color={night ? '#2d3f5c' : '#9fd3ea'} gradientMap={toonGradient()} emissive={night ? '#1c2c4a' : '#6fb6d6'} emissiveIntensity={0.35}/></mesh>
     <RBox position={[0, 0, 0.08]} size={[0.05, 1.1, 0.03]} radius={0.01} color="#5a4636"/>
   </group>
 }
