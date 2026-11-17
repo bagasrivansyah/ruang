@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +9,13 @@ import express, { type Express, type NextFunction, type Request, type Response }
 // after the code is entered. Only a scrypt hash of the code is stored, in Ruang's own config
 // (never in Hermes), with a random secret that signs sessions: changing or removing the code
 // replaces the secret, which ends every session. Forgotten code: `ruang access-code off`.
+//
+// On hosts with an ephemeral filesystem (free tiers that restart or sleep), the stored file
+// would not survive a restart, so RUANG_ACCESS_CODE can set the code from the environment
+// instead: its salt, hash and session secret are derived deterministically from the code, so
+// the same code keeps working across restarts. When it is set it wins over the stored file,
+// and codes set in Settings (or `ruang access-code`) take effect only after it is removed.
+// An invalid value locks the office (fail closed) until it is fixed.
 
 export const MIN_CODE_LENGTH = 12
 export const MAX_CODE_LENGTH = 128
@@ -57,6 +64,20 @@ function isAccessFile(value: unknown): value is AccessFile {
   return Boolean(record) && record!.version === 1 && ['salt', 'hash', 'secret', 'createdAt'].every((key) => typeof record![key] === 'string' && (record![key] as string).length > 0)
 }
 
+/** Salt, hash and session secret derived from an env code, so it survives restarts. */
+let envCache: { code: string; file: AccessFile } | undefined
+async function envAccessFile(): Promise<AccessFile | 'broken' | undefined> {
+  const raw = process.env.RUANG_ACCESS_CODE
+  if (!raw) return undefined
+  let code: string
+  try { code = normalizeCode(raw) } catch { return 'broken' }
+  if (envCache?.code === code) return envCache.file
+  const salt = createHash('sha256').update(`ruang-access-salt:${code}`).digest()
+  const file: AccessFile = { version: 1, salt: salt.toString('base64'), hash: (await derive(code, salt)).toString('base64'), secret: createHash('sha256').update(`ruang-access-secret:${code}`).digest().toString('base64'), createdAt: new Date().toISOString() }
+  envCache = { code, file }
+  return file
+}
+
 export class AccessStore {
   private cache?: { key: string; state: AccessState }
   constructor(readonly dir: string = accessConfigDir()) {}
@@ -65,6 +86,9 @@ export class AccessStore {
 
   /** Re-read whenever the file changes, so `ruang access-code` takes effect without a restart. */
   async state(): Promise<AccessState> {
+    const envFile = await envAccessFile()
+    if (envFile === 'broken') return { enabled: true, broken: true }
+    if (envFile) return { enabled: true, file: envFile }
     let key: string
     try {
       const info = await stat(this.path)

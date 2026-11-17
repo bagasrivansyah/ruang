@@ -100,6 +100,28 @@ describe('access code', () => {
   })
 })
 
+describe('access code from RUANG_ACCESS_CODE', () => {
+  const ENV_CODE = 'env-code-for-ruang'
+  beforeEach(() => { process.env.RUANG_ACCESS_CODE = ENV_CODE })
+  afterEach(() => { delete process.env.RUANG_ACCESS_CODE })
+
+  it('locks the routes with no file on disk, and unlocks with the env code', async () => {
+    expect(await (await get('/api/access')).json()).toMatchObject({ enabled: true, unlocked: false })
+    expect((await get('/api/secret')).status).toBe(401)
+    expect((await post('/api/access/unlock', { code: 'wrong-code-wrong' })).status).toBe(401)
+    const unlocked = await post('/api/access/unlock', { code: ENV_CODE })
+    expect(unlocked.status).toBe(200)
+    expect((await get('/api/secret', sessionOf(unlocked))).status).toBe(200)
+    await expect(readFile(join(dir, 'access.json'), 'utf8')).rejects.toThrow()
+  })
+
+  it('stays locked when the env code is too short', async () => {
+    process.env.RUANG_ACCESS_CODE = 'short'
+    expect((await get('/api/secret')).status).toBe(401)
+    expect((await post('/api/access/unlock', { code: 'short' })).status).toBe(401)
+  })
+})
+
 describe('access code helpers', () => {
   it('generates readable 80-bit codes and validates custom ones', () => {
     expect(generateCode()).toMatch(/^ruang-([2-9A-HJ-NP-Z]{4}-){3}[2-9A-HJ-NP-Z]{4}$/)
