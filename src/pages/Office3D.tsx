@@ -2,11 +2,12 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { officeStateBadge } from '../office-state.ts'
-import { agentLook } from '../agents.ts'
+import { officeStateBadge, roomPositionLabel } from '../office-state.ts'
+import { agentLook, type HairStyle } from '../agents.ts'
 import { clampTarget, createLayout, FLOOR_HEIGHT, floorOf, GAME_ROOM, idlePlan, placementFor, walkPath3, type Floor, type OfficeLayout, type Placement, type Vec3 } from '../office3d-layout.ts'
+import { toonGradient } from '../scene3d/anime.ts'
 import { Environment } from '../scene3d/environment.tsx'
-import { RBox, WorkDesk } from '../scene3d/props.tsx'
+import { OutlineBox, RBox, WorkDesk } from '../scene3d/props.tsx'
 import type { OfficeStation } from '../types.ts'
 
 // 3D view of the same Office snapshot the 2D view renders. Positions come from each station's
@@ -19,6 +20,38 @@ function outdoors(x: number, z: number, layout: OfficeLayout): boolean {
   const { minX, maxX, maxZ } = layout.building
   const inGameRoom = x > GAME_ROOM.minX && x < GAME_ROOM.maxX && z > GAME_ROOM.minZ && z < GAME_ROOM.maxZ
   return x < minX || z > maxZ || (x > maxX && !inGameRoom)
+}
+
+/** Anime hair built from primitives: a shared top cap, back and fringe, plus a style-specific shape. Positions are relative to the character body (head centre y 1.53). */
+function AnimeHair({ style, color }: { style: HairStyle; color: string }) {
+  return <group>
+    {/* Top cap and back, shared by every style */}
+    <RBox position={[0, 1.79, -0.02]} size={[0.56, 0.16, 0.5]} radius={0.06} color={color} roughness={0.9}/>
+    <RBox position={[0, 1.6, -0.21]} size={[0.56, 0.34, 0.08]} radius={0.03} color={color} roughness={0.9}/>
+    {/* Fringe across the forehead, tipped forward at the bottom */}
+    <RBox position={[-0.17, 1.72, 0.22]} rotation={[0.25, 0, 0.15]} size={[0.15, 0.17, 0.06]} radius={0.03} color={color} roughness={0.9}/>
+    <RBox position={[0, 1.74, 0.23]} rotation={[0.25, 0, 0]} size={[0.17, 0.18, 0.06]} radius={0.03} color={color} roughness={0.9}/>
+    <RBox position={[0.17, 1.72, 0.22]} rotation={[0.25, 0, -0.15]} size={[0.15, 0.17, 0.06]} radius={0.03} color={color} roughness={0.9}/>
+    {style === 'long' && <>
+      <RBox position={[0, 1.32, -0.22]} size={[0.56, 0.5, 0.08]} radius={0.03} color={color} roughness={0.9}/>
+      <RBox position={[-0.27, 1.5, -0.05]} size={[0.09, 0.55, 0.12]} radius={0.03} color={color} roughness={0.9}/>
+      <RBox position={[0.27, 1.5, -0.05]} size={[0.09, 0.55, 0.12]} radius={0.03} color={color} roughness={0.9}/>
+    </>}
+    {style === 'bob' && <>
+      <RBox position={[-0.27, 1.58, -0.02]} size={[0.09, 0.32, 0.34]} radius={0.03} color={color} roughness={0.9}/>
+      <RBox position={[0.27, 1.58, -0.02]} size={[0.09, 0.32, 0.34]} radius={0.03} color={color} roughness={0.9}/>
+    </>}
+    {style === 'ponytail' && <>
+      <RBox position={[0.24, 1.78, -0.28]} rotation={[0.5, 0, -0.35]} size={[0.13, 0.55, 0.13]} radius={0.05} color={color} roughness={0.9}/>
+      <RBox position={[0.2, 1.86, -0.14]} size={[0.1, 0.08, 0.1]} radius={0.03} color="#f4d35e" roughness={0.9}/>
+    </>}
+    {style === 'spiky' && <>
+      <RBox position={[-0.16, 1.92, -0.02]} rotation={[0, 0, 0.5]} size={[0.1, 0.18, 0.1]} radius={0.03} color={color} roughness={0.9}/>
+      <RBox position={[0, 1.95, -0.02]} rotation={[0.2, 0, 0]} size={[0.1, 0.2, 0.1]} radius={0.03} color={color} roughness={0.9}/>
+      <RBox position={[0.16, 1.92, -0.02]} rotation={[0, 0, -0.5]} size={[0.1, 0.18, 0.1]} radius={0.03} color={color} roughness={0.9}/>
+      <RBox position={[0, 1.9, -0.16]} rotation={[-0.4, 0, 0]} size={[0.1, 0.16, 0.1]} radius={0.03} color={color} roughness={0.9}/>
+    </>}
+  </group>
 }
 
 function Character({ station, placement, layout, floor, onSelect, anchor }: { station: OfficeStation; placement: Placement; layout: OfficeLayout; floor: Floor; onSelect: (station: OfficeStation, trigger: HTMLElement | null) => void; anchor: (object: THREE.Object3D | null) => void }) {
@@ -96,19 +129,25 @@ function Character({ station, placement, layout, floor, onSelect, anchor }: { st
 
   return <group ref={root} position={start}>
     <group ref={body} onClick={(event) => { event.stopPropagation(); onSelect(station, null) }} onPointerOver={() => { document.body.style.cursor = 'pointer' }} onPointerOut={() => { document.body.style.cursor = '' }}>
-      <mesh ref={leftLeg} position={[-0.11, 0.66, 0]} castShadow geometry={legGeometry}><meshStandardMaterial color={tint(colors.pants)} roughness={0.8}/></mesh>
-      <mesh ref={rightLeg} position={[0.11, 0.66, 0]} castShadow geometry={legGeometry}><meshStandardMaterial color={tint(colors.pants)} roughness={0.8}/></mesh>
+      <mesh ref={leftLeg} position={[-0.11, 0.66, 0]} castShadow geometry={legGeometry}><meshToonMaterial color={tint(colors.pants)} gradientMap={toonGradient()}/></mesh>
+      <mesh ref={rightLeg} position={[0.11, 0.66, 0]} castShadow geometry={legGeometry}><meshToonMaterial color={tint(colors.pants)} gradientMap={toonGradient()}/></mesh>
       <RBox position={[0, 0.98, 0]} size={[0.48, 0.58, 0.3]} radius={0.07} color={tint(colors.shirt)} roughness={0.85}/>
-      <mesh ref={leftArm} position={[-0.31, 1.2, 0]} castShadow geometry={armGeometry}><meshStandardMaterial color={tint(colors.shirt)} roughness={0.85}/></mesh>
-      <mesh ref={rightArm} position={[0.31, 1.2, 0]} castShadow geometry={armGeometry}><meshStandardMaterial color={tint(colors.shirt)} roughness={0.85}/></mesh>
-      <RBox position={[0, 1.5, 0]} size={[0.4, 0.4, 0.37]} radius={0.08} color={tint(colors.skin)} roughness={0.7}/>
-      <RBox position={[0, 1.72, -0.02]} size={[0.43, 0.13, 0.41]} radius={0.05} color={tint(colors.hair)} roughness={0.9}/>
-      <RBox position={[0, 1.58, -0.19]} size={[0.43, 0.3, 0.06]} radius={0.03} color={tint(colors.hair)} roughness={0.9}/>
-      <RBox position={[-0.09, 1.52, 0.186]} size={[0.06, 0.07, 0.01]} radius={0.004} color="#17201e" shadow={false}/>
-      <RBox position={[0.09, 1.52, 0.186]} size={[0.06, 0.07, 0.01]} radius={0.004} color="#17201e" shadow={false}/>
-      <RBox position={[0, 1.4, 0.186]} size={[0.12, 0.025, 0.01]} radius={0.004} color="#9a5a44" shadow={false}/>
+      <OutlineBox position={[0, 0.98, 0]} size={[0.48, 0.58, 0.3]} radius={0.07}/>
+      <mesh ref={leftArm} position={[-0.31, 1.2, 0]} castShadow geometry={armGeometry}><meshToonMaterial color={tint(colors.shirt)} gradientMap={toonGradient()}/></mesh>
+      <mesh ref={rightArm} position={[0.31, 1.2, 0]} castShadow geometry={armGeometry}><meshToonMaterial color={tint(colors.shirt)} gradientMap={toonGradient()}/></mesh>
+      {/* Anime head: bigger than the old blocky one, with large eyes, blush and styled hair. */}
+      <RBox position={[0, 1.53, 0]} size={[0.52, 0.48, 0.46]} radius={0.1} color={tint(colors.skin)} roughness={0.7}/>
+      <OutlineBox position={[0, 1.53, 0]} size={[0.52, 0.48, 0.46]} radius={0.1}/>
+      <AnimeHair style={colors.hairStyle} color={tint(colors.hair)}/>
+      {[-1, 1].map((side) => <group key={side}>
+        <RBox position={[side * 0.125, 1.56, 0.236]} size={[0.14, 0.17, 0.012]} radius={0.004} color="#ffffff" shadow={false}/>
+        <RBox position={[side * 0.125, 1.55, 0.243]} size={[0.09, 0.12, 0.012]} radius={0.004} color={tint(colors.eyes)} shadow={false}/>
+        <RBox position={[side * 0.145, 1.59, 0.25]} size={[0.035, 0.035, 0.012]} radius={0.004} color="#ffffff" shadow={false}/>
+        <RBox position={[side * 0.185, 1.46, 0.232]} size={[0.08, 0.05, 0.01]} radius={0.004} color="#f4a3b4" opacity={0.55} shadow={false}/>
+      </group>)}
+      <RBox position={[0, 1.38, 0.236]} size={[0.09, 0.022, 0.012]} radius={0.004} color="#9a5a44" shadow={false}/>
       {unknown && <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.45, 0.55, 24]}/><meshBasicMaterial color="#e9c47b" transparent opacity={0.85}/></mesh>}
-      <object3D ref={anchor} position={[0, 2.05, 0]}/>
+      <object3D ref={anchor} position={[0, 2.15, 0]}/>
     </group>
   </group>
 }
@@ -260,11 +299,13 @@ function useThemeName(): 'dark' | 'light' {
 function Lighting({ theme }: { theme: 'dark' | 'light' }) {
   const day = theme === 'light'
   return <>
-    <color attach="background" args={[day ? '#bfe0ef' : '#1a2335']}/>
-    <fog attach="fog" args={[day ? '#bfe0ef' : '#1a2335', 38, 75]}/>
-    <hemisphereLight args={[day ? '#fff4e0' : '#7f95bd', day ? '#5d7a4c' : '#1e2620', day ? 1.1 : 0.32]}/>
-    <directionalLight position={[10, 16, 9]} intensity={day ? 2.4 : 0.75} color={day ? '#fff1d6' : '#ff9a5a'} castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-camera-left={-16} shadow-camera-right={16} shadow-camera-top={16} shadow-camera-bottom={-16} shadow-camera-far={60}/>
-    <ambientLight intensity={day ? 0.35 : 0.14} color={day ? '#ffffff' : '#8fa4d8'}/>
+    <color attach="background" args={[day ? '#a8dcf5' : '#1a2335']}/>
+    <fog attach="fog" args={[day ? '#a8dcf5' : '#1a2335', 38, 75]}/>
+    <hemisphereLight args={[day ? '#fff4e0' : '#7f95bd', day ? '#5d7a4c' : '#1e2620', day ? 1.35 : 0.4]}/>
+    <directionalLight position={[10, 16, 9]} intensity={day ? 2.6 : 0.75} color={day ? '#fff1d6' : '#ff9a5a'} castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-camera-left={-16} shadow-camera-right={16} shadow-camera-top={16} shadow-camera-bottom={-16} shadow-camera-far={60}/>
+    {/* Anime rim light: a soft pink fill from behind-left so characters pop off the background. */}
+    <directionalLight position={[-10, 8, -8]} intensity={day ? 0.7 : 0.25} color="#ffd9ec"/>
+    <ambientLight intensity={day ? 0.5 : 0.14} color={day ? '#ffffff' : '#8fa4d8'}/>
   </>
 }
 
@@ -337,6 +378,7 @@ export default function Office3D({ stations, onSelect }: { stations: OfficeStati
           {busy && station.activity && <span className="speech speech-3d">{station.activity}</span>}
           {idle && <span className={`speech speech-3d speech-idle${idle.placement.pose === 'lie' ? ' speech-sleep' : ''}`}>{idle.placement.pose === 'lie' ? '💤 ' : ''}{idle.placement.label ?? idle.stop.label}</span>}
           <span className="agent-tag-row"><span className="pixel-station-name">{station.privacy === 'locked' ? '🔒 ' : ''}{station.name}</span><span className={`badge ${badge.tone}`}>{station.state === 'Idle' ? 'Idle' : station.state}</span></span>
+          <span className="desk-label-3d">{station.role} · {roomPositionLabel(station.roomPosition)}</span>
         </button>
       })}
     </div>

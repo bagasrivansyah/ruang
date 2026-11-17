@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { agentLook } from '../agents.ts'
-import { officeStateBadge } from '../office-state.ts'
+import { officeStateBadge, roomPositionLabel } from '../office-state.ts'
 import { usePolling } from '../polling.ts'
 import { formatCompact, formatDateTime, formatNumber } from '../format.ts'
 import type { Page } from '../routes.ts'
@@ -82,6 +82,9 @@ export function OfficeDetail({ station, onClose }: { station: OfficeStation; onC
   useEffect(() => { closeRef.current?.focus() }, [])
   const badge = officeStateBadge(station.state)
   const profile = station.id
+  // Folder and Memory tabs only exist for Hermes profiles and OpenCode — Noblesse crew
+  // stations have no Hermes folders or memory to browse.
+  const hasFiles = station.role === 'Hermes profile' || station.role === 'OpenCode'
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') { event.stopPropagation(); onClose(); return }
     if (event.key !== 'Tab') return
@@ -99,12 +102,12 @@ export function OfficeDetail({ station, onClose }: { station: OfficeStation; onC
     <section className={`office-detail${tab === 'Overview' ? '' : ' wide'}`} ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="office-detail-title" onKeyDown={onKeyDown}>
       <button className="office-close" ref={closeRef} onClick={onClose} aria-label={`Close ${station.name} details`}>Close</button>
       <div className="detail-head"><div className="detail-avatar"><PixelCharacter agent={station.id}/></div><div><p className="eyebrow">STATION DETAIL</p><h2 id="office-detail-title">{station.name}</h2><span className={`badge ${badge.tone}`}>{officeStateLabel(station)}</span>{station.privacy === 'locked' && <span className="badge muted">🔒 Locked</span>}</div></div>
-      {profile && <div className="detail-tabs" role="tablist" aria-label={`${station.name} details`}>{DETAIL_TABS.map((item) => <button type="button" role="tab" key={item} aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item}</button>)}</div>}
+      {profile && hasFiles && <div className="detail-tabs" role="tablist" aria-label={`${station.name} details`}>{DETAIL_TABS.map((item) => <button type="button" role="tab" key={item} aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item}</button>)}</div>}
       <div role="tabpanel" aria-label={tab} className="detail-body">
         {tab === 'Overview' && <>{station.privacy === 'locked' && <p className="file-notice">🔒 {station.name} is locked: its task, activity, memory and files are private. Open the Folder or Memory tab to enter the PIN.</p>}
           {station.privacy === 'unlocked' && <RelockBar agent={station.id} minutes={15}/>}
           {station.activity && <p className="detail-activity">{station.activity}</p>}
-          <dl className="office-detail-grid"><div><dt>Agent type</dt><dd>{station.role}</dd></div>{station.role !== 'OpenCode' && <AgentTokens agent={station.id}/>}<div><dt>Current room</dt><dd>{station.room} / {station.roomPosition}</dd></div><div><dt>Current task</dt><dd>{station.currentTask}</dd></div><div><dt>Recent activity</dt><dd>{station.recentActivity}</dd></div><div><dt>Source / provenance</dt><dd>{station.provenance}</dd></div><div><dt>Freshness</dt><dd>{station.freshness}</dd></div></dl></>}
+          <dl className="office-detail-grid"><div><dt>Agent type</dt><dd>{station.role}</dd></div>{station.role === 'Hermes profile' && <AgentTokens agent={station.id}/>}<div><dt>Current room</dt><dd>{station.room} / {roomPositionLabel(station.roomPosition)}</dd></div><div><dt>Current task</dt><dd>{station.currentTask}</dd></div><div><dt>Recent activity</dt><dd>{station.recentActivity}</dd></div><div><dt>Source / provenance</dt><dd>{station.provenance}</dd></div><div><dt>Freshness</dt><dd>{station.freshness}</dd></div></dl></>}
         {tab === 'Folder' && profile && <AgentFolder profile={profile}/>}
         {tab === 'Memory' && profile && <AgentMemoryView profile={profile}/>}
       </div>
