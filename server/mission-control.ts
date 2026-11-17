@@ -1,5 +1,6 @@
 import { execFile as execFileCallback } from 'node:child_process'
 import { promisify } from 'node:util'
+import { NOBLESSE_CREW, crewStation, type CrewMember } from './crew.js'
 
 const execFile = promisify(execFileCallback)
 const CACHE_MS = 10_000
@@ -818,12 +819,17 @@ export async function collectAgentActivity(profiles: readonly string[], run: Run
 // ---------------------------------------------------------------------------
 // Office
 
-/** One office station per agent: every Hermes profile, plus OpenCode when it is installed. */
-interface AgentSpec { id: string; role: string; profile?: string; gateway?: GatewayState; aliases: string[] }
+/** One office station per agent: every Hermes profile, plus OpenCode when it is installed. When this machine reports no Hermes profiles at all, the office shows the Noblesse crew from the local roster (server/crew.ts) instead of standing empty. */
+interface AgentSpec { id: string; role: string; profile?: string; gateway?: GatewayState; aliases: string[]; /** Local Noblesse crew member (no Hermes profile): the office shows its declared data. */ crew?: { member: CrewMember; index: number } }
 
 export function agentRoster(runtime: RuntimeSnapshot): AgentSpec[] {
   const profiles = runtime.profiles.availability === 'available' ? runtime.profiles.data : []
   const agents: AgentSpec[] = profiles.filter((profile) => PROFILE_NAME.test(profile.name)).map((profile) => ({ id: profile.name, role: 'Hermes profile', profile: profile.name, gateway: profile.gateway, aliases: [profile.name.toLowerCase()] }))
+  if (agents.length === 0) {
+    // No Hermes profiles on this machine (Hermes is not installed here): the office shows the
+    // Noblesse crew from the local roster instead of standing empty.
+    return NOBLESSE_CREW.map((member, index) => ({ id: member.id, role: member.role, aliases: [member.id, member.name.toLowerCase()], crew: { member, index } }))
+  }
   if (runtime.openCode.availability === 'available' && !agents.some((agent) => agent.id === 'opencode')) agents.push({ id: 'opencode', role: 'OpenCode', aliases: ['opencode', 'open-code'] })
   return agents
 }
@@ -908,6 +914,25 @@ export function buildOfficeSnapshot(runtime: RuntimeSnapshot, board: TaskBoardSn
   const agentActivity = options.agentActivity && isFresh(options.agentActivity.fetchedAt, now) ? options.agentActivity : undefined
   const explicitStates = options.explicitStates ?? []
   const stations = agentRoster(runtime).map((agent, index): OfficeStation => {
+    if (agent.crew) {
+      // A Noblesse crew member has no Hermes profile, Kanban tasks or logs to derive state
+      // from — the roster declares where they are and what they are doing.
+      const placed = crewStation(agent.crew.member, agent.crew.index, now)
+      return {
+        id: agent.id,
+        name: agent.crew.member.name,
+        role: agent.role,
+        room: placed.room,
+        roomPosition: placed.roomPosition,
+        seat: index + 1,
+        state: placed.state,
+        currentTask: placed.currentTask,
+        recentActivity: placed.recentActivity,
+        activity: placed.activity,
+        provenance: 'Noblesse crew roster (server/crew.ts) — declared locally, no Hermes',
+        freshness: `Crew roster declared locally; snapshot ${fetchedAt}`,
+      }
+    }
     const gateway = agent.gateway
     const task = freshBoard ? attributedTask(board.tasks.data, agent.aliases) : undefined
     const overlay = explicitState(agent, explicitStates, now)
